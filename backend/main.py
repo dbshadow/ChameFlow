@@ -28,8 +28,10 @@ if not os.path.exists(DOWNLOAD_DIR):
 
 app.mount("/images", StaticFiles(directory=DOWNLOAD_DIR), name="images")
 
-# 內網 ComfyUI 位址 (無須驗證)
-DEFAULT_SERVER = "http://192.168.7.150:8188"
+# ComfyUI Address Configuration
+# Priority: Environment Variable > Default
+DEFAULT_SERVER = os.getenv("COMFY_SERVER", "http://192.168.7.150:8188")
+print(f"INFO: Connecting to ComfyUI at {DEFAULT_SERVER}")
 
 @app.get("/api/workflows")
 def list_workflows():

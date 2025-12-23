@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/downloaded_images
+*.log
+*.tar.gz
+README.md
+start.sh
+Dockerfile
