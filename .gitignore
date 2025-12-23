@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+frontend/dist/
+frontend/build/
+
+# Logs
+*.log
+backend.log
+frontend.log
+
+# Data
+backend/downloaded_images/
+downloaded_images/
+*.tar.gz
+
+# OS & Editor
+.DS_Store
+.vscode/
+.idea/
