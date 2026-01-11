@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Image as ImageIcon, Download, RefreshCw, History, CheckCircle2, Upload, X, Trash2 } from 'lucide-react';
+import { Settings, Image as ImageIcon, Download, RefreshCw, History, CheckCircle2, Upload, X, Trash2, File as FileIcon, Archive } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { GeneratedImage, GenerationStatus } from './types';
+import JSZip from 'jszip';
+import type { GeneratedImage, GenerationStatus, BatchItem } from './types';
 
 // Utility for Tailwind classes
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -13,7 +14,8 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 const API_BASE = "";
 
 const WORKFLOW_MAP: Record<string, string> = {
-  "rmbg.json": "去除背景",
+  "rmbg.json": "去除背景 (單張)",
+  "rmbg_batch.json": "去除背景 (批次)",
   "z_image.json": "Z-Image",
   "flux.json": "Flux"
 };
@@ -34,6 +36,10 @@ function App() {
   const [sensitivity, setSensitivity] = useState<number>(0.5);
   const [inputImageFile, setInputImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // --- States: Batch Specific ---
+  const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   // --- States: Runtime ---
   const [status, setStatus] = useState<GenerationStatus>({
@@ -81,7 +87,8 @@ function App() {
 
   // 2. Handle Workflow Change
   const isNegativePromptAvailable = selectedWorkflow.includes("flux");
-  const isRmbgWorkflow = selectedWorkflow.includes("rmbg");
+  const isRmbgWorkflow = selectedWorkflow === "rmbg.json";
+  const isBatchWorkflow = selectedWorkflow === "rmbg_batch.json";
 
   // --- Handlers ---
 
@@ -223,6 +230,135 @@ function App() {
     }
   };
 
+  const handleBatchFiles = (files: FileList | null) => {
+      if (!files) return;
+      const newItems: BatchItem[] = Array.from(files).map(file => ({
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          originalName: file.name,
+          status: 'pending',
+          previewUrl: URL.createObjectURL(file),
+          resultUrl: null,
+          resultFilename: null
+      }));
+      setBatchQueue(prev => [...prev, ...newItems]);
+  };
+
+  const handleClearBatch = () => {
+      if (confirm("確定要清空所有批次任務嗎？")) {
+          setBatchQueue([]);
+      }
+  };
+
+  const processBatchQueue = async () => {
+      if (isBatchProcessing) return;
+      setIsBatchProcessing(true);
+
+      // 複製一份 Queue 以便更新
+      const queue = [...batchQueue];
+      
+      // 依序處理
+      for (let i = 0; i < queue.length; i++) {
+          if (queue[i].status !== 'pending') continue;
+
+          // 1. Update status to uploading
+          setBatchQueue(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'uploading' } : item));
+          
+          try {
+              // 2. Upload
+              const formData = new FormData();
+              formData.append('file', queue[i].file);
+              const uploadRes = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
+              const uploadData = await uploadRes.json();
+              if (uploadData.error) throw new Error(uploadData.error);
+              
+              const uploadedFilename = uploadData.filename;
+
+              // 3. Update status to processing
+              setBatchQueue(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'processing' } : item));
+
+              // 4. Generate via WebSocket (One-off connection)
+              await new Promise<void>((resolve, reject) => {
+                  const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/generate`);
+                  
+                  ws.onopen = () => {
+                      ws.send(JSON.stringify({
+                          workflow: selectedWorkflow,
+                          prompt: "",
+                          negative_prompt: "",
+                          width: 1024,
+                          height: 1024,
+                          seed: null,
+                          model: selectedModel,
+                          sensitivity: sensitivity,
+                          input_image: uploadedFilename
+                      }));
+                  };
+
+                  ws.onmessage = (event) => {
+                      const data = JSON.parse(event.data);
+                      if (data.type === 'images') {
+                          const resultFilename = data.files[0];
+                          const resultUrl = `${API_BASE}/images/${resultFilename}`;
+                          
+                          setBatchQueue(prev => prev.map((item, idx) => idx === i ? { 
+                              ...item, 
+                              status: 'done', 
+                              resultUrl,
+                              resultFilename 
+                          } : item));
+                          ws.close();
+                          resolve();
+                      } else if (data.type === 'error') {
+                          ws.close();
+                          reject(new Error(data.message));
+                      }
+                  };
+
+                  ws.onerror = (e) => {
+                      reject(new Error("WebSocket Error"));
+                  };
+              });
+
+          } catch (error: any) {
+              console.error("Batch Item Failed", error);
+              setBatchQueue(prev => prev.map((item, idx) => idx === i ? { 
+                  ...item, 
+                  status: 'failed', 
+                  error: error.message 
+              } : item));
+          }
+      }
+
+      setIsBatchProcessing(false);
+  };
+
+  const handleBatchDownload = async () => {
+      const zip = new JSZip();
+      const completedItems = batchQueue.filter(item => item.status === 'done' && item.resultUrl);
+      
+      if (completedItems.length === 0) {
+          alert("沒有已完成的圖片可供下載");
+          return;
+      }
+
+      for (const item of completedItems) {
+          if (!item.resultUrl) continue;
+          const response = await fetch(item.resultUrl);
+          const blob = await response.blob();
+          const filename = `Rmbg_${item.originalName}`;
+          zip.file(filename, blob);
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `batch_rmbg_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
   // --- Render ---
 
   return (
@@ -265,7 +401,73 @@ function App() {
               </div>
             </div>
 
-            {isRmbgWorkflow ? (
+            {isBatchWorkflow ? (
+                // --- Batch RMBG Controls ---
+                <>
+                    <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-gray-500 uppercase">批次上傳圖片</label>
+                        <div className="relative border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-gray-50 hover:border-primary-300 transition-all cursor-pointer overflow-hidden group" onClick={() => document.getElementById('batch-upload')?.click()}>
+                            <input 
+                                id="batch-upload"
+                                type="file" 
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={e => handleBatchFiles(e.target.files)}
+                            />
+                            <div className="flex flex-col items-center gap-3 py-4 text-gray-400 group-hover:text-primary-400 transition-colors">
+                                <div className="p-3 bg-gray-50 rounded-full group-hover:bg-primary-50 transition-colors">
+                                    <Upload size={24} />
+                                </div>
+                                <span className="text-xs font-medium">點擊選擇多張圖片</span>
+                                <span className="text-[10px] text-gray-300">支援拖放多個檔案</span>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center px-1">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">佇列: {batchQueue.length} 張</span>
+                            {batchQueue.length > 0 && (
+                                <button onClick={handleClearBatch} className="text-[10px] text-red-400 hover:text-red-500 flex items-center gap-1">
+                                    <Trash2 size={12} /> 清空
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-gray-500 uppercase">去背模型</label>
+                        <div className="relative">
+                            <select 
+                                value={selectedModel}
+                                onChange={e => setSelectedModel(e.target.value)}
+                                className="w-full px-3 py-2.5 appearance-none bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 cursor-pointer transition-all"
+                            >
+                                <option value="RMBG-2.0">RMBG-2.0</option>
+                                <option value="INSPYRENET">INSPYRENET</option>
+                                <option value="BEN2">BEN2</option>
+                            </select>
+                            <div className="absolute right-3 top-3 pointer-events-none text-gray-400">
+                                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                            <label className="text-[11px] font-bold text-gray-500 uppercase">靈敏度</label>
+                            <span className="text-[11px] font-mono text-primary-500 font-bold">{sensitivity}</span>
+                        </div>
+                        <input 
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={sensitivity}
+                            onChange={e => setSensitivity(parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-primary-400"
+                        />
+                    </div>
+                </>
+            ) : isRmbgWorkflow ? (
                 // --- RMBG Controls ---
                 <>
                     <div className="space-y-1.5">
@@ -432,16 +634,28 @@ function App() {
 
         <div className="p-6 border-t border-gray-100 bg-white">
           <button
-            onClick={handleGenerate}
-            disabled={status.isGenerating}
+            onClick={isBatchWorkflow ? processBatchQueue : handleGenerate}
+            disabled={isBatchWorkflow ? (isBatchProcessing || batchQueue.length === 0) : status.isGenerating}
             className={cn(
               "w-full py-3.5 px-4 rounded-2xl text-white font-bold shadow-lg shadow-primary-100 transition-all flex items-center justify-center gap-2.5",
-              status.isGenerating 
+              (isBatchWorkflow ? (isBatchProcessing || batchQueue.length === 0) : status.isGenerating)
                 ? "bg-gray-200 cursor-not-allowed shadow-none text-gray-400"
                 : "bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 hover:shadow-xl hover:shadow-primary-200 active:scale-[0.98]"
             )}
           >
-            {status.isGenerating ? (
+            {isBatchWorkflow ? (
+                isBatchProcessing ? (
+                    <>
+                        <RefreshCw className="animate-spin" size={20} />
+                        <span>處理中...</span>
+                    </>
+                ) : (
+                    <>
+                        <CheckCircle2 size={20} />
+                        <span>開始批次處理</span>
+                    </>
+                )
+            ) : status.isGenerating ? (
               <>
                 <RefreshCw className="animate-spin" size={20} />
                 <span>{status.message}</span>
@@ -459,6 +673,100 @@ function App() {
       {/* --- Right Panel: Preview --- */}
       <div className="flex-1 flex flex-col bg-gray-50 relative">
         
+        {isBatchWorkflow ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-8 py-5 border-b border-gray-200 bg-white flex justify-between items-center shadow-sm z-10">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-primary-500 rounded-full"></span>
+                            批次處理佇列
+                        </h2>
+                        <p className="text-xs text-gray-400 mt-0.5">已完成: {batchQueue.filter(i => i.status === 'done').length} / {batchQueue.length}</p>
+                    </div>
+                    <button 
+                        onClick={handleBatchDownload}
+                        disabled={batchQueue.filter(i => i.status === 'done').length === 0}
+                        className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-medium transition-all shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Archive size={18} /> 下載全部 (ZIP)
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    {batchQueue.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50/50">
+                            <div className="p-6 bg-white rounded-full shadow-sm mb-4">
+                                <FileIcon size={48} className="text-gray-200" />
+                            </div>
+                            <p className="text-lg font-medium">佇列是空的</p>
+                            <p className="text-sm opacity-60 mt-1">請從左側上傳圖片開始批次處理</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3">
+                            {batchQueue.map((item) => (
+                                <div key={item.id} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center gap-4 group hover:shadow-md transition-all">
+                                    <div className="w-16 h-16 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-100 relative">
+                                        <img src={item.previewUrl || ''} className="w-full h-full object-cover opacity-80" />
+                                        {item.status === 'done' && (
+                                            <div className="absolute inset-0 bg-primary-500/20 flex items-center justify-center">
+                                                <CheckCircle2 size={20} className="text-white drop-shadow-md" />
+                                            </div>
+                                        )}
+                                        {item.status === 'processing' && (
+                                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                                <RefreshCw size={20} className="text-white animate-spin" />
+                                            </div>
+                                        )}
+                                        {item.status === 'failed' && (
+                                            <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
+                                                <X size={20} className="text-white" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h3 className="font-bold text-gray-700 truncate text-sm">{item.originalName}</h3>
+                                            <span className={cn(
+                                                "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider",
+                                                item.status === 'pending' && "bg-gray-100 text-gray-500",
+                                                item.status === 'uploading' && "bg-blue-50 text-blue-500",
+                                                item.status === 'processing' && "bg-purple-50 text-purple-500",
+                                                item.status === 'done' && "bg-green-50 text-green-500",
+                                                item.status === 'failed' && "bg-red-50 text-red-500",
+                                            )}>
+                                                {item.status === 'pending' && "等待中"}
+                                                {item.status === 'uploading' && "上傳中"}
+                                                {item.status === 'processing' && "處理中"}
+                                                {item.status === 'done' && "完成"}
+                                                {item.status === 'failed' && "失敗"}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 font-mono">
+                                            {item.resultFilename || (item.status === 'failed' ? item.error : '---')}
+                                        </p>
+                                    </div>
+
+                                    {item.status === 'done' && item.resultUrl && (
+                                        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity px-2">
+                                            <a 
+                                                href={item.resultUrl} 
+                                                download={`Rmbg_${item.originalName}`}
+                                                className="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition-colors block"
+                                                title="單獨下載"
+                                            >
+                                                <Download size={20} />
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        ) : (
+            <>
         <div className="flex-1 flex items-center justify-center p-12 overflow-hidden relative">
           
           {currentImage ? (
@@ -536,6 +844,8 @@ function App() {
              ))}
           </div>
         </div>
+        </>
+        )}
 
       </div>
     </div>

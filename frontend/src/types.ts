@@ -17,3 +17,16 @@ export interface GenerationStatus {
   message: string;
   seed: number | null;
 }
+
+export type BatchStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'failed';
+
+export interface BatchItem {
+  id: string;
+  file: File;
+  originalName: string;
+  status: BatchStatus;
+  previewUrl: string | null;
+  resultUrl: string | null;
+  resultFilename: string | null; // The filename returned from backend (e.g., Rembg_00001.png)
+  error?: string;
+}

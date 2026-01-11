@@ -36,7 +36,7 @@ ENV COMFY_SERVER="http://192.168.7.150:8188"
 
 # Install Python dependencies
 # Using direct install to keep image size small, or use requirements.txt
-RUN pip install --no-cache-dir fastapi uvicorn websockets requests
+RUN pip install --no-cache-dir fastapi uvicorn websockets requests python-multipart
 
 # Copy backend code
 COPY backend/ ./backend/

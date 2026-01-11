@@ -1,45 +1,71 @@
 # ChameFlow
 
-ChameFlow is a minimalist, modern web frontend for [ComfyUI](https://github.com/comfyanonymous/ComfyUI), designed to simplify the image generation workflow. It provides a clean interface for selecting workflows, adjusting parameters, and managing generated images without the complexity of the node-based graph.
-
-![ChameFlow Interface](https://via.placeholder.com/800x450.png?text=ChameFlow+Preview)
+ChameFlow is a minimalist, modern web frontend for [ComfyUI](https://github.com/comfyanonymous/ComfyUI), designed to simplify the image generation and processing workflow. It abstracts the complexity of node graphs into a clean, intuitive interface for both creation (Text-to-Image) and processing (Image-to-Image/Batch).
 
 ## Features
 
-- **Simplified Interface**: A clean, split-screen UI (Settings vs. Preview).
-- **Workflow Selection**: Dropdown to choose between different JSON workflows (e.g., Flux, SDXL).
+### 🎨 Image Generation
+- **Simplified Interface**: Clean split-screen UI.
+- **Workflow Support**: Ready for Flux, SDXL, Z-Image, and more.
 - **Parameter Control**: Easy access to Prompt, Negative Prompt, Dimensions, and Seed.
-- **Real-time Progress**: WebSocket integration for real-time generation feedback.
-- **History & Download**: Session-based history strip and easy image download.
-- **Workflow Mapping**: Intelligent mapping of generic UI inputs to specific ComfyUI nodes via `_meta.title` tags.
+- **Real-time Progress**: WebSocket integration for instant feedback.
+
+### 🖼️ Background Removal (RMBG)
+- **Single Mode**: Upload an image and instantly remove its background.
+- **Model Selection**: Choose between **RMBG-2.0**, **INSPYRENET**, or **BEN2**.
+- **Adjustable Sensitivity**: Fine-tune the removal precision.
+- **Interactive Preview**: See the uploaded image and result instantly.
+
+### 📦 Batch Processing
+- **Bulk Upload**: Drag & drop or select multiple images at once.
+- **Queue System**: Visual queue table showing status (Pending, Processing, Done, Failed).
+- **Sequential Processing**: Smart scheduling to prevent server overload.
+- **One-Click Download**: Automatically package all processed images into a **ZIP archive** with organized filenames (`Rmbg_[OriginalName]`).
 
 ## Architecture
 
-- **Frontend**: React (Vite) + Tailwind CSS v3
-- **Backend**: Python FastAPI (Acts as an API Gateway and Static File Server)
-- **Communication**: WebSocket (for real-time progress) & REST API
+- **Frontend**: React (Vite) + Tailwind CSS v3 + JSZip
+- **Backend**: Python FastAPI (API Gateway + Static File Server)
+- **Communication**: WebSocket (Real-time) & REST API (Uploads)
 
 ## Prerequisites
 
 - **Python 3.10+**
 - **Node.js 18+**
-- A running instance of **ComfyUI**.
+- A running instance of **ComfyUI** with necessary custom nodes installed (e.g., ComfyUI-RMBG).
   - Default: `http://192.168.7.150:8188`
   - **Configurable via `COMFY_SERVER` environment variable.**
 
-## Installation
+## Quick Start (One-Click)
+
+We provide a robust script to handle setup, build, and execution automatically.
+
+```bash
+# 1. Clone repository
+git clone https://github.com/your-repo/chameflow.git
+cd chameflow
+
+# 2. Make script executable
+chmod +x start.sh
+
+# 3. Run (Auto-installs dependencies & builds frontend)
+./start.sh
+```
+Access the application at: **http://localhost:8000**
+
+---
+
+## Manual Installation
 
 ### 1. Backend Setup
 
 ```bash
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # Install dependencies
-pip install fastapi uvicorn websockets requests
-# Or using uv
-uv sync
+pip install fastapi uvicorn websockets requests python-multipart
 ```
 
 ### 2. Frontend Setup
@@ -47,83 +73,20 @@ uv sync
 ```bash
 cd frontend
 npm install
+npm run build  # For production
 ```
-
-## Running the Application
-
-### Option A: Development Mode (Hot Reload)
-
-Run backend and frontend separately for development.
-
-**Backend:**
-```bash
-source .venv/bin/activate
-export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
-python -m uvicorn backend.main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm run dev
-# Access at http://localhost:5173
-```
-
-### Option B: Production Mode (Integrated)
-
-Build the frontend and serve everything through FastAPI.
-
-1. **Build Frontend:**
-   ```bash
-   cd frontend
-   npm run build
-   cd ..
-   ```
-
-2. **Run Server:**
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
-   # Optional: Override ComfyUI server address
-   export COMFY_SERVER="http://127.0.0.1:8188"
-   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
-   ```
-   
-   Access the full application at **http://localhost:8000**.
-
-### Option C: Docker Deployment (Recommended)
-
-Easily build and run the application in an isolated container.
-
-1. **Build the Image:**
-   ```bash
-   docker build -t chameflow .
-   ```
-
-2. **Run the Container:**
-   ```bash
-   # Run with default settings
-   docker run -d -p 8000:8000 --name chameflow-app chameflow
-   
-   # Run with custom ComfyUI server address
-   docker run -d -p 8000:8000 \
-     -e COMFY_SERVER="http://10.0.0.5:8188" \
-     --name chameflow-app chameflow
-   ```
-
-   Access at **http://localhost:8000**.
-
-   *Note: If your ComfyUI is running on the host machine (not in Docker), you might need to ensure the container can reach it. For Linux, you can add `--network="host"` or reference the host IP.*
 
 ## Configuration
 
-To use your own ComfyUI workflows:
+### Adding Custom Workflows
 1. Save your workflow as **API Format (JSON)** from ComfyUI.
 2. Edit the JSON file to add `_meta` titles to nodes you want to control:
-   - `user_prompt`: For Positive Prompt (CLIPTextEncode)
-   - `user_negative_prompt`: For Negative Prompt (CLIPTextEncode)
-   - `user_size`: For EmptyLatentImage (Width/Height)
-   - `user_seed`: For KSampler (Seed)
+   - `user_prompt`: Positive Prompt
+   - `user_negative_prompt`: Negative Prompt
+   - `user_size`: EmptyLatentImage (Width/Height)
+   - `user_seed`: KSampler (Seed)
+   - `user_input_image`: LoadImage (For Image-to-Image)
+   - `user_rmbg_settings`: RMBG Node (Model/Sensitivity)
 3. Place the `.json` file in the project root directory.
 
 ## License
