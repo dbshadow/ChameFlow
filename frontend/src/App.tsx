@@ -315,7 +315,7 @@ function App() {
                       }
                   };
 
-                  ws.onerror = (e) => {
+                  ws.onerror = () => {
                       reject(new Error("WebSocket Error"));
                   };
               });
