@@ -1,7 +1,7 @@
 import os
 import uuid
 import json
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,6 +46,17 @@ def list_workflows():
         print(f"Error listing workflows: {e}")
     return {"workflows": workflows}
 
+@app.post("/api/upload")
+async def upload_image(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        runner = ComfyRunner(DEFAULT_SERVER, DOWNLOAD_DIR)
+        filename = runner.upload_image(contents, file.filename)
+        return {"filename": filename}
+    except Exception as e:
+        print(f"Upload error: {e}")
+        return {"error": str(e)}
+
 @app.websocket("/ws/generate")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -61,13 +72,24 @@ async def websocket_endpoint(websocket: WebSocket):
         height = int(data.get("height", 1024))
         seed_opt = data.get("seed")
         
+        # New parameters for RMBG
+        model = data.get("model")
+        sensitivity = data.get("sensitivity")
+        input_image = data.get("input_image")
+        
+        extra_params = {
+            "model": model,
+            "sensitivity": sensitivity,
+            "input_image": input_image
+        }
+        
         # 初始化 ComfyRunner (使用預設內網位址)
         runner = ComfyRunner(DEFAULT_SERVER, DOWNLOAD_DIR)
         
         try:
             wf_data = runner.load_workflow(workflow_file)
             final_wf, used_seed = runner.apply_settings(
-                wf_data, prompt, neg_prompt, width, height, seed_opt
+                wf_data, prompt, neg_prompt, width, height, seed_opt, extra_params
             )
             await websocket.send_json({"type": "info", "seed": used_seed})
         except Exception as e:

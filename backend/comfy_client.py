@@ -37,12 +37,14 @@ class ComfyRunner:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def apply_settings(self, workflow: Dict[str, Any], prompt: str, neg_prompt: str, width: int, height: int, seed: Optional[int] = None):
+    def apply_settings(self, workflow: Dict[str, Any], prompt: str, neg_prompt: str, width: int, height: int, seed: Optional[int] = None, extra_params: Optional[Dict[str, Any]] = None):
         """
         根據 _meta.title 修改工作流參數
         """
         # 產生隨機 Seed 如果未提供
         final_seed = seed if seed is not None else random.randint(1, 10**14)
+        if extra_params is None:
+            extra_params = {}
 
         for node_id, node in workflow.items():
             title = node.get('_meta', {}).get('title', '')
@@ -66,8 +68,37 @@ class ComfyRunner:
                     node['inputs']['seed'] = final_seed
                 elif 'noise_seed' in node['inputs']:
                      node['inputs']['noise_seed'] = final_seed
+            
+            elif title == 'user_input_image':
+                if 'image' in node['inputs'] and 'input_image' in extra_params:
+                    node['inputs']['image'] = extra_params['input_image']
+            
+            elif title == 'user_rmbg_settings':
+                if 'model' in extra_params:
+                    node['inputs']['model'] = extra_params['model']
+                if 'sensitivity' in extra_params:
+                    node['inputs']['sensitivity'] = extra_params['sensitivity']
 
         return workflow, final_seed
+
+    def upload_image(self, image_data: bytes, filename: str) -> str:
+        url = f"{self.server_address}/upload/image"
+        # files tuple format: (filename, fileobj, content_type) or just (filename, fileobj)
+        files = {'image': (filename, image_data)}
+        # Overwrite if exists to ensure we use the latest
+        data = {'overwrite': 'true'}
+        
+        try:
+            req = requests.post(url, files=files, data=data)
+            req.raise_for_status()
+            res = req.json()
+            # Return the filename used by ComfyUI (might be renamed or in subfolder)
+            # If subfolder is present, ComfyUI usually expects "subfolder/filename" or just filename if input dir.
+            # Usually 'name' is correct.
+            return res.get('name', filename)
+        except Exception as e:
+            print(f"Upload image error: {e}")
+            raise
 
     def queue_prompt(self, workflow: Dict[str, Any], client_id: str) -> str:
         p = {"prompt": workflow, "client_id": client_id}

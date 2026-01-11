@@ -1,0 +1,45 @@
+{
+  "1": {
+    "inputs": {
+      "model": "RMBG-2.0",
+      "sensitivity": 0.7,
+      "process_res": 2048,
+      "mask_blur": 0,
+      "mask_offset": 0,
+      "invert_output": false,
+      "refine_foreground": false,
+      "background": "Alpha",
+      "background_color": "#222222",
+      "image": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "RMBG",
+    "_meta": {
+      "title": "user_rmbg_settings"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "611982578_10215326598235742_4969665216934847778_n.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "user_input_image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Rembg",
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  }
+}
