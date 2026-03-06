@@ -37,6 +37,9 @@ function App() {
   const [inputImageFile, setInputImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // --- States: UI ---
+  const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
+
   // --- States: Batch Specific ---
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -109,6 +112,8 @@ function App() {
 
   const handleGenerate = async () => {
     if (!selectedWorkflow) return;
+    
+    if (window.innerWidth < 768) setMobileTab('preview');
     
     setStatus(prev => ({ ...prev, isGenerating: true, message: "初始化...", progressNode: null, seed: null }));
 
@@ -255,6 +260,7 @@ function App() {
   const processBatchQueue = async () => {
       if (isBatchProcessing) return;
       setIsBatchProcessing(true);
+      if (window.innerWidth < 768) setMobileTab('preview');
 
       // 複製一份 Queue 以便更新
       const queue = [...batchQueue];
@@ -370,7 +376,10 @@ function App() {
     <div className="flex h-screen w-full bg-gray-50 text-gray-800 font-sans overflow-hidden">
       
       {/* --- Left Panel: Controls --- */}
-      <div className="w-[400px] flex-shrink-0 flex flex-col border-r border-gray-200 bg-white h-full shadow-sm z-10">
+      <div className={cn(
+        "w-full md:w-[400px] flex-shrink-0 flex-col border-r border-gray-200 bg-white h-full shadow-sm z-10 transition-all",
+        mobileTab === 'settings' ? 'flex' : 'hidden md:flex'
+      )}>
         
         <div className="p-6 border-b border-gray-100">
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2 tracking-tight">
@@ -637,7 +646,7 @@ function App() {
           </div>
         </div>
 
-        <div className="p-6 border-t border-gray-100 bg-white">
+        <div className="p-6 border-t border-gray-100 bg-white pb-24 md:pb-6">
           <button
             onClick={isBatchWorkflow ? processBatchQueue : handleGenerate}
             disabled={isBatchWorkflow ? (isBatchProcessing || batchQueue.length === 0) : status.isGenerating}
@@ -676,35 +685,38 @@ function App() {
       </div>
 
       {/* --- Right Panel: Preview --- */}
-      <div className="flex-1 flex flex-col bg-gray-50 relative">
+      <div className={cn(
+        "flex-1 flex flex-col bg-gray-50 relative min-w-0 max-w-full",
+        mobileTab === 'preview' ? 'flex' : 'hidden md:flex'
+      )}>
         
         {isBatchWorkflow ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <div className="px-8 py-5 border-b border-gray-200 bg-white flex justify-between items-center shadow-sm z-10">
-                    <div>
+                    <div className="min-w-0">
                         <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                             <span className="w-2 h-2 bg-primary-500 rounded-full"></span>
                             批次處理佇列
                         </h2>
-                        <p className="text-xs text-gray-400 mt-0.5">已完成: {batchQueue.filter(i => i.status === 'done').length} / {batchQueue.length}</p>
+                        <p className="text-xs text-gray-400 mt-0.5 truncate">已完成: {batchQueue.filter(i => i.status === 'done').length} / {batchQueue.length}</p>
                     </div>
                     <button 
                         onClick={handleBatchDownload}
                         disabled={batchQueue.filter(i => i.status === 'done').length === 0}
-                        className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-medium transition-all shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-medium transition-all shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                     >
-                        <Archive size={18} /> 下載全部 (ZIP)
+                        <Archive size={18} /> 下載全部
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24 md:pb-8">
                     {batchQueue.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50/50">
                             <div className="p-6 bg-white rounded-full shadow-sm mb-4">
                                 <FileIcon size={48} className="text-gray-200" />
                             </div>
                             <p className="text-lg font-medium">佇列是空的</p>
-                            <p className="text-sm opacity-60 mt-1">請從左側上傳圖片開始批次處理</p>
+                            <p className="text-sm opacity-60 mt-1">請從左側上傳圖片開始</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 gap-3">
@@ -747,13 +759,13 @@ function App() {
                                                 {item.status === 'failed' && "失敗"}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-gray-400 font-mono">
+                                        <p className="text-xs text-gray-400 font-mono truncate">
                                             {item.resultFilename || (item.status === 'failed' ? item.error : '---')}
                                         </p>
                                     </div>
 
                                     {item.status === 'done' && item.resultUrl && (
-                                        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity px-2">
+                                        <div className="flex-shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity px-2">
                                             <a 
                                                 href={item.resultUrl} 
                                                 download={`Rmbg_${item.originalName}`}
@@ -771,18 +783,18 @@ function App() {
                 </div>
             </div>
         ) : (
-            <>
-        <div className="flex-1 flex items-center justify-center p-12 overflow-hidden relative">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex items-center justify-center p-4 md:p-12 overflow-hidden relative">
           
           {currentImage ? (
-             <div className="relative group max-w-full max-h-full shadow-2xl shadow-gray-200 rounded-2xl overflow-hidden border-4 border-white">
+             <div className="relative group max-w-full max-h-full shadow-2xl shadow-gray-200 rounded-2xl overflow-hidden border-4 border-white animate-in zoom-in-95 duration-300">
                 <img 
                   src={currentImage.url} 
                   alt="Generated" 
-                  className="max-w-full max-h-[75vh] object-contain bg-white" 
+                  className="max-w-full max-h-[65vh] md:max-h-[75vh] object-contain bg-white" 
                 />
                 
-                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-all flex justify-end">
+                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/60 to-transparent md:opacity-0 group-hover:opacity-100 transition-all flex justify-end">
                    <button 
                      onClick={() => handleDownload(currentImage)}
                      className="bg-white hover:bg-primary-50 text-gray-800 px-5 py-2.5 rounded-xl text-sm font-bold shadow-xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
@@ -814,7 +826,7 @@ function App() {
           )}
         </div>
 
-        <div className="h-40 bg-white border-t border-gray-100 flex flex-col flex-shrink-0 shadow-2xl shadow-black/5">
+        <div className="h-40 bg-white border-t border-gray-100 flex flex-col flex-shrink-0 shadow-2xl shadow-black/5 mb-16 md:mb-0 w-full min-w-0">
           <div className="px-6 py-3 border-b border-gray-50 flex items-center justify-between">
             <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
               <History size={14} className="text-gray-300" /> 歷史紀錄
@@ -828,7 +840,7 @@ function App() {
                 </button>
             )}
           </div>
-          <div className="flex-1 overflow-x-auto p-4 flex gap-4 custom-scrollbar">
+          <div className="flex-1 overflow-x-auto p-4 flex gap-4 custom-scrollbar w-full">
              {history.length === 0 && (
                <div className="w-full flex items-center justify-center text-gray-300 text-[11px] font-medium italic">
                  尚未生成任何影像
@@ -839,7 +851,7 @@ function App() {
                  key={img.id}
                  onClick={() => setCurrentImage(img)}
                  className={cn(
-                   "relative h-full min-w-[70px] rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 group bg-gray-50 shadow-sm",
+                   "relative h-full min-w-[70px] max-w-[120px] rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 group bg-gray-50 shadow-sm",
                    currentImage?.id === img.id ? "border-primary-400 ring-4 ring-primary-50" : "border-transparent hover:border-gray-200"
                  )}
                >
@@ -849,9 +861,27 @@ function App() {
              ))}
           </div>
         </div>
-        </>
+            </div>
         )}
 
+      </div>
+
+      {/* --- Mobile Bottom Nav --- */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button 
+          onClick={() => setMobileTab('settings')} 
+          className={cn("flex flex-col items-center gap-1 p-2 w-full", mobileTab === 'settings' ? 'text-primary-500' : 'text-gray-400')}
+        >
+          <Settings size={20} />
+          <span className="text-[10px] font-medium">參數設定</span>
+        </button>
+        <button 
+          onClick={() => setMobileTab('preview')} 
+          className={cn("flex flex-col items-center gap-1 p-2 w-full", mobileTab === 'preview' ? 'text-primary-500' : 'text-gray-400')}
+        >
+          <ImageIcon size={20} />
+          <span className="text-[10px] font-medium">預覽結果</span>
+        </button>
       </div>
     </div>
   );
