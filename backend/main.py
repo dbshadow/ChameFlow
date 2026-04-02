@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from comfy_client import ComfyRunner
+from .comfy_client import ComfyRunner
 
 app = FastAPI()
 
