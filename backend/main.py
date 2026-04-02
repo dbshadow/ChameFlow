@@ -28,7 +28,6 @@ if not os.path.exists(DOWNLOAD_DIR):
 
 # 雙重掛載 images 目錄
 app.mount("/images", StaticFiles(directory=DOWNLOAD_DIR), name="images")
-app.mount("/chameflow/images", StaticFiles(directory=DOWNLOAD_DIR), name="images_subpath")
 
 # ComfyUI Address Configuration
 # Priority: Environment Variable > Default
@@ -36,7 +35,6 @@ DEFAULT_SERVER = os.getenv("COMFY_SERVER", "http://192.168.7.150:8188")
 print(f"INFO: Connecting to ComfyUI at {DEFAULT_SERVER}")
 
 @app.get("/api/workflows")
-@app.get("/chameflow/api/workflows")
 def list_workflows():
     # 取得專案根目錄
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +48,6 @@ def list_workflows():
     return {"workflows": workflows}
 
 @app.post("/api/upload")
-@app.post("/chameflow/api/upload")
 async def upload_image(file: UploadFile = File(...)):
     try:
         contents = await file.read()
@@ -62,7 +59,6 @@ async def upload_image(file: UploadFile = File(...)):
         return {"error": str(e)}
 
 @app.websocket("/ws/generate")
-@app.websocket("/chameflow/ws/generate")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
@@ -118,12 +114,11 @@ FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if os.path.exists(FRONTEND_DIST):
     # 雙重掛載 assets 目錄
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
-    app.mount("/chameflow/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets_subpath")
     
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         # 簡單過濾掉像是 API 請求的誤入
-        if "api/" in full_path or "ws/" in full_path or "images/" in full_path:
+        if full_path.startswith("api/") or full_path.startswith("ws/") or full_path.startswith("images/"):
              return {"error": "Not found"}
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 else:

@@ -11,7 +11,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 }
 
 // 修改為相對路徑，這樣部署到任何 Server/IP 都能運作
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+const API_BASE = "";
 
 const WORKFLOW_MAP: Record<string, string> = {
   "rmbg.json": "去除背景 (單張)",
@@ -154,9 +154,7 @@ function App() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // Remove index.html and trailing slash from pathname to get the base path
-    const basePath = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
-    const wsUrl = `${protocol}//${host}${basePath}/ws/generate`;
+    const wsUrl = `${protocol}//${host}/ws/generate`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -289,8 +287,7 @@ function App() {
               await new Promise<void>((resolve, reject) => {
                   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                   const host = window.location.host;
-                  const basePath = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
-                  const ws = new WebSocket(`${protocol}//${host}${basePath}/ws/generate`);
+                  const ws = new WebSocket(`${protocol}//${host}/ws/generate`);
                   
                   ws.onopen = () => {
                       ws.send(JSON.stringify({
